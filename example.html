@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Example</title>
+    <meta charset="utf-8" />
+    <script src="jigsaw.js"></script>
+  </head>
+  <body>
+    <div id="gallery-1" style="width: 600px; border: 1px solid black;
+      line-height: 0px;">
+    <div id="gallery-2" style="width: 600px; border: 1px solid black;">
+    </div>
+    <script>
+      draw([0.75, 0.75, 0.75, 0.75, 0.75, 0.75, 4/3], 5,
+        document.getElementById('gallery-1'));
+      draw([0.75, 0.75, 0.75, 0.75, 0.75, 0.75, 0.75], 5,
+        document.getElementById('gallery-2'));
+    </script>
+  </body>
+</html>
