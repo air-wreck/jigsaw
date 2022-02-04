@@ -47,20 +47,19 @@ const Jigsaw = (function() {
     }
 
     // Dynamic programming approach costs O(n^2).
-    // TODO: try minimizing *mean* error across all rows, not the
-    // *total* error. Otherwise, this prefers having just one really
-    // small row...
+    // Note that we minimize the *mean* error across all rows, not the
+    // *total* error. Otherwise, we would artificially prefer having
+    // just one really small row.
     const solution = Array(aspect_ratios.length);
     for (let i = 0; i < aspect_ratios.length; i++) {
       let best_height = compute_height(0, i);
       let best_cost = objective(best_height);
       let best_prev = null;
       let best_n = 1;
-      console.log(i, best_cost);
       for (let j = 0; j < i; j++) {
         const height = compute_height(j + 1, i);
-        const cost = (solution[j].cost * solution[j].n + objective(height)) / (solution[j].n + 1);
-        console.log(i, j, cost, best_cost);
+        const cost = (solution[j].cost * solution[j].n + objective(height))
+                     / (solution[j].n + 1);
         if (cost < best_cost) {
           best_height = height;
           best_cost = cost;
@@ -68,7 +67,12 @@ const Jigsaw = (function() {
           best_n = solution[j].n + 1;
         }
       }
-      solution[i] = {prev: best_prev, cost: best_cost, height: best_height, n : best_n};
+      solution[i] = {
+        prev: best_prev,
+        cost: best_cost,
+        height: best_height,
+        n : best_n
+      };
     }
 
     // Compute each image height by walking backward in the solution
@@ -84,8 +88,6 @@ const Jigsaw = (function() {
       if (heights[idx] === undefined)
         heights[idx] = heights[idx + 1];
     }
-
-    console.log(solution);
 
     // Compute scale factors from heights.
     return heights.map((height, idx) => height * aspect_ratios[idx]);
