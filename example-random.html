@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Random Example</title>
+    <meta charset="utf-8" />
+    <link href="example.css" rel="stylesheet" />
+    <script src="jigsaw.js"></script>
+  </head>
+  <body>
+    <div id="gallery" class="gallery"></div>
+    <script>
+      const margin = 5;  // pixels
+      const num_images = 10;
+
+      function random(min = 0, max = 1) {
+        return Math.random() * (max - min) + min;
+      }
+
+      function random_aspect_ratio() {
+        const size = Math.random();
+        if (size < 0.2) {
+          // Very small aspect ratio
+          return random(min = 0.1, max = 0.5);
+        } else if (size < 0.8) {
+          // "Normal" aspect ratio
+          return random(min = 0.5, max = 1.5)
+        } else {
+          // Very large aspect ratio
+          return random(min = 1.5, max = 10.0);
+        }
+      }
+
+      const aspect_ratios =
+        Array(num_images)
+          .fill(0)
+          .map(_ => random_aspect_ratio());
+
+      const gallery = document.getElementById('gallery');
+      Jigsaw.draw(aspect_ratios, margin, gallery, objective =
+        Jigsaw.default_objectives.squared_error);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,9 @@
+.gallery {
+  width: 600px;
+  max-width: 100%;
+  background-color: moccasin;
+  border: 1px solid black;
+  margin: 10px;
+  line-height: 0px;
+  text-align: center;
+}

@@ -3,130 +3,127 @@
  */
 
 const Jigsaw = (function() {
-  function lazy_seq(iterator) {
-    function* map(iterator, fn) {
-      for (let i of iterator)
-        yield fn(i);
+
+  // The "ideal height" for a row is by default 1/4 (i.e. three 4:3
+  // landscape photos per row, ignoring margins). This only affects the
+  // provided objective functions; you can write your own instead.
+  const default_ideal_height = 0.25;
+
+  // Mnimize the total squared deviation from ideal height.
+  function objective_squared_error(height,
+    ideal_height = default_ideal_height) {
+
+    return Math.pow(height - ideal_height, 2);
+  }
+
+  // A more sophisticated objective tries to heavily penalize very small
+  // rows.
+  function objective_penalize_small(height,
+    ideal_height = default_ideal_height) {
+
+    if (height < ideal_height)
+      return Math.log(ideal_height / height);
+    return height - ideal_height;
+  }
+
+  const default_objectives = {
+    squared_error: objective_squared_error,
+    penalize_small: objective_penalize_small
+  }
+
+  // Returns the scale factors for the images, in the same order as
+  // provided in aspect_ratios.
+  function scale_images(aspect_ratios, margin, objective) {
+    let sum = 0;
+    const prefix_sums = aspect_ratios.map(a => sum += a);
+
+    function compute_height(i, j) {
+      let range_sum = prefix_sums[j];
+      if (i > 0)
+        range_sum -= prefix_sums[i - 1];
+
+      const n = j - i + 1;
+      return (1 - (n + 1) * margin) / range_sum;
     }
 
-    function* filter(iterator, fn) {
-      for (let i of iterator) {
-        if (fn(i))
-          yield i;
+    // Dynamic programming approach costs O(n^2).
+    // TODO: try minimizing *mean* error across all rows, not the
+    // *total* error. Otherwise, this prefers having just one really
+    // small row...
+    const solution = Array(aspect_ratios.length);
+    for (let i = 0; i < aspect_ratios.length; i++) {
+      let best_height = compute_height(0, i);
+      let best_cost = objective(best_height);
+      let best_prev = null;
+      let best_n = 1;
+      console.log(i, best_cost);
+      for (let j = 0; j < i; j++) {
+        const height = compute_height(j + 1, i);
+        const cost = (solution[j].cost * solution[j].n + objective(height)) / (solution[j].n + 1);
+        console.log(i, j, cost, best_cost);
+        if (cost < best_cost) {
+          best_height = height;
+          best_cost = cost;
+          best_prev = j;
+          best_n = solution[j].n + 1;
+        }
       }
+      solution[i] = {prev: best_prev, cost: best_cost, height: best_height, n : best_n};
     }
 
-    function reduce(iterator, fn) {
-      let result = iterator.next().value;
-      for (let i of iterator)
-        result = fn(result, i);
-      return result;
+    // Compute each image height by walking backward in the solution
+    // array.
+    const heights = Array(aspect_ratios.length);
+    let idx = aspect_ratios.length - 1;
+    do {
+      heights[idx] = solution[idx].height;
+      idx = solution[idx].prev;
+    } while (idx !== null);
+
+    for (idx = aspect_ratios.length - 2; idx >= 0; idx--) {
+      if (heights[idx] === undefined)
+        heights[idx] = heights[idx + 1];
     }
 
-    return {
-      next: () => iterator.next(),
-      map: fn => lazy_seq(map(iterator, fn)),
-      filter: fn => lazy_seq(filter(iterator, fn)),
-      reduce: fn => reduce(iterator, fn)
-    }
+    console.log(solution);
+
+    // Compute scale factors from heights.
+    return heights.map((height, idx) => height * aspect_ratios[idx]);
   }
 
-  // The default objective function minimizes the total squared
-  // deviation from 1/4 height for each row (i.e. three 4:3 landscape
-  // photos per row is "ideal," ignoring margins).
-  // TODO: maybe make objective to minimize squared distance from three
-  // per row taking the average aspect ratio?
-  // TODO: this probably also depends on the container width
-  function default_objective(rows) {
-    const ideal_height = 0.25;
-    return rows
-      .map(row => Math.pow(row.height - ideal_height, 2))
-      .reduce((x, y) => x + y);
-  }
+  function draw(aspect_ratios, margin_abs, target,
+    objective = default_objectives.squared_error) {
 
-  // Slightly unorthodox: aspect ratios are height : width.
-  function make_row(aspect_ratios, margin) {
-    if (aspect_ratios.length === 0)
-      return [];
-
-    const a1 = aspect_ratios[0];
-    const coefficient_sum =
-      aspect_ratios
-        .map(a => a1 / a)
-        .reduce((x, y) => x + y);
-
-    const x1 = (1.0 - (aspect_ratios.length + 1) * margin) / coefficient_sum;
-    return {
-      'height': a1 * x1,
-      'aspect_ratios': aspect_ratios,
-      'scale_factors': aspect_ratios.map(a => a1 * x1 / a)
-    }
-  }
-
-  function make_rows(splits, margin) {
-    return splits.map(segment => make_row(segment, margin));
-  }
-
-  function subsets(array) {
-    function *generator() {
-      const upper = 1 << array.length;
-      for (let i = 0; i < upper; i++) {
-        const str = i.toString(2).padStart(array.length);
-        yield array.filter((_, idx) => str[idx] === '1');
-      }
-    }
-    return lazy_seq(generator());
-  }
-
-  function all_splits(items) {
-    const all_indices = [...Array(items.length).keys()].slice(1);
-    return subsets(all_indices).map(indices => {
-      const splits = [0, ...indices, items.length];
-      return splits.slice(1).map((hi, idx) => items.slice(splits[idx], hi));
-    });
-  }
-
-  function scale_images(aspect_ratios, margin, objective = default_objective) {
-    // For now, try each of the 2^(n-1) ways to split into rows.
-    return all_splits(aspect_ratios)
-      .map(splits => make_rows(splits, margin))
-      .map(rows => {return {'rows': rows, 'value': objective(rows)}})
-      .reduce((x, y) => x.value < y.value ? x : y)
-      .rows;
-  }
-
-  function draw(aspect_ratios, margin_abs, target) {
     target.style.paddingTop = `${margin_abs / 2}px`;
     target.style.paddingBottom = `${margin_abs / 2}px`;
-    scale_images(aspect_ratios, margin_abs / target.offsetWidth)
-      .forEach(row => {
-        row.scale_factors
-          .forEach((scale, idx) => {
-            const width = scale * target.offsetWidth;
-            const aspect_ratio = row.aspect_ratios[idx];
-            const box = document.createElement('div');
-            box.style.backgroundColor = 'red';
-            box.style.width = `${width}px`;
-            box.style.height = `${width * aspect_ratio}px`;
-            box.style.display = 'inline-block';
-            box.style.margin = `${margin_abs / 2}px`;
-            box.style.lineHeight = '1em';
-            box.textContent = (1 / aspect_ratio).toFixed(2);
-            target.appendChild(box);
-
-            if (idx === 0)
-              box.style.marginLeft = `${margin_abs}px`;
-          });
+    scale_images(aspect_ratios,
+                 margin_abs / target.offsetWidth,
+                 objective = objective)
+      .forEach((scale, idx) => {
+        const width = scale * target.offsetWidth;
+        const aspect_ratio = aspect_ratios[idx];
+        const box = document.createElement('div');
+        box.style.backgroundColor = 'palevioletred';
+        box.style.width = `${width}px`;
+        box.style.height = `${width / aspect_ratio}px`;
+        box.style.display = 'inline-block';
+        box.style.margin = `${margin_abs / 2}px`;
+        box.style.lineHeight = '1em';
+        box.style.textAlign = 'left';
+        box.textContent = aspect_ratio.toFixed(2);
+        target.appendChild(box);
       });
   }
 
-  function layout(images, target_width, margin_abs = 5) {
-    const aspect_ratios = Array.from(images)
-      .map(image => image.naturalHeight / image.naturalWidth);
+  function layout(images, target_width, margin_abs = 5,
+    objective = default_objectives.squared_error) {
 
-    scale_images(aspect_ratios, margin_abs / target_width)
-      .map(row => row.scale_factors)
-      .reduce((x, y) => x.concat(y))
+    const aspect_ratios = Array.from(images)
+      .map(image => image.naturalWidth / image.naturalHeight);
+
+    scale_images(aspect_ratios,
+                 margin_abs / target_width,
+                 objective = objective)
       .forEach((scale, idx) => {
         const image = images[idx];
         image.width = scale * target_width;
@@ -137,6 +134,7 @@ const Jigsaw = (function() {
   return {
     scale_images: scale_images,
     draw: draw,
-    layout: layout
+    layout: layout,
+    default_objectives: default_objectives
   }
-  })();
+})();
